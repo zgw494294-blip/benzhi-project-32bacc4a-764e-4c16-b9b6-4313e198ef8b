@@ -16,6 +16,7 @@ import (
 type FileRepository struct {
 	locksMu      sync.Mutex
 	surveyLocks  map[string]*sync.Mutex
+	stateMu      sync.RWMutex
 	state        snapshot
 	eventsPath   string
 	snapshotPath string
@@ -62,12 +63,23 @@ func (r *FileRepository) Create(ctx context.Context, aggregate *domain.Aggregate
 	lock.Lock()
 	defer lock.Unlock()
 	ref := idempotencyRef("create", key)
+
+	// Read idempotency and survey existence under a consistent shared-state view.
+	r.stateMu.RLock()
 	if previous, ok := r.state.Idempotency[ref]; ok {
+		r.stateMu.RUnlock()
 		return cloneRaw(previous), true, nil
 	}
+	surveyExists := false
 	if _, ok := r.state.Surveys[aggregate.Survey.ID]; ok {
+		surveyExists = true
+	}
+	r.stateMu.RUnlock()
+
+	if surveyExists {
 		return nil, false, domain.NewError(domain.CodeConflict, "调查标识已存在", "id")
 	}
+
 	copy, err := cloneAggregate(aggregate)
 	if err != nil {
 		return nil, false, err
@@ -86,20 +98,33 @@ func (r *FileRepository) Transact(ctx context.Context, surveyID string, expected
 	lock.Lock()
 	defer lock.Unlock()
 	ref := idempotencyRef(surveyID, key)
+
+	// Read idempotency and the working snapshot under a consistent shared-state view.
+	r.stateMu.RLock()
 	if previous, ok := r.state.Idempotency[ref]; ok {
+		r.stateMu.RUnlock()
 		return cloneRaw(previous), true, nil
 	}
-	current, ok := r.state.Surveys[surveyID]
-	if !ok {
+	var (
+		currentSnapshot *domain.Aggregate
+		found           bool
+	)
+	if existing, ok := r.state.Surveys[surveyID]; ok {
+		currentSnapshot = existing
+		found = true
+	}
+	r.stateMu.RUnlock()
+
+	if !found {
 		return nil, false, domain.NewError(domain.CodeNotFound, "调查任务不存在", "surveyId")
 	}
 	if expected <= 0 {
 		return nil, false, domain.Required("expectedVersion")
 	}
-	if current.Survey.ExpectedVersion != expected {
-		return nil, false, domain.NewError(domain.CodeConflict, fmt.Sprintf("版本冲突：当前版本为 %d", current.Survey.ExpectedVersion), "expectedVersion")
+	if currentSnapshot.Survey.ExpectedVersion != expected {
+		return nil, false, domain.NewError(domain.CodeConflict, fmt.Sprintf("版本冲突：当前版本为 %d", currentSnapshot.Survey.ExpectedVersion), "expectedVersion")
 	}
-	working, err := cloneAggregate(current)
+	working, err := cloneAggregate(currentSnapshot)
 	if err != nil {
 		return nil, false, err
 	}
@@ -107,7 +132,7 @@ func (r *FileRepository) Transact(ctx context.Context, surveyID string, expected
 	if err != nil {
 		return nil, false, err
 	}
-	if working.Survey.ExpectedVersion <= current.Survey.ExpectedVersion {
+	if working.Survey.ExpectedVersion <= currentSnapshot.Survey.ExpectedVersion {
 		return nil, false, fmt.Errorf("事务未推进调查版本")
 	}
 	if err := r.commitLocked("survey_updated", working, ref, result); err != nil {
@@ -117,6 +142,13 @@ func (r *FileRepository) Transact(ctx context.Context, surveyID string, expected
 }
 
 func (r *FileRepository) commitLocked(kind string, aggregate *domain.Aggregate, ref string, result json.RawMessage) error {
+	// Serialize all shared-state mutations: event append, sequence increment,
+	// survey/idempotency/release index updates, and snapshot replacement. This
+	// prevents concurrent commits from racing on LastSequence, interleaving
+	// map writes, or colliding on the shared snapshot.json.tmp file.
+	r.stateMu.Lock()
+	defer r.stateMu.Unlock()
+
 	event := eventRecord{SchemaVersion: schemaVersion, Sequence: r.state.LastSequence + 1, Kind: kind, SurveyID: aggregate.Survey.ID, SurveyVersion: aggregate.Survey.ExpectedVersion, IdempotencyRef: ref, Result: cloneRaw(result), Aggregate: aggregate, RecordedAt: time.Now().UTC()}
 	checksum, err := calculateChecksum(event)
 	if err != nil {
@@ -139,7 +171,9 @@ func (r *FileRepository) Load(ctx context.Context, surveyID string) (*domain.Agg
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	r.stateMu.RLock()
 	aggregate, ok := r.state.Surveys[surveyID]
+	r.stateMu.RUnlock()
 	if !ok {
 		return nil, domain.NewError(domain.CodeNotFound, "调查任务不存在", "surveyId")
 	}
@@ -150,7 +184,9 @@ func (r *FileRepository) LookupIdempotency(ctx context.Context, scope, key strin
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
+	r.stateMu.RLock()
 	result, ok := r.state.Idempotency[idempotencyRef(scope, key)]
+	r.stateMu.RUnlock()
 	return cloneRaw(result), ok, nil
 }
 
@@ -158,7 +194,9 @@ func (r *FileRepository) FindRelease(ctx context.Context, code string) (*domain.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	r.stateMu.RLock()
 	release, ok := r.state.Releases[code]
+	r.stateMu.RUnlock()
 	if !ok {
 		return nil, domain.NewError(domain.CodeNotFound, "发布凭据不存在", "verificationCode")
 	}
