@@ -34,6 +34,7 @@ func writeError(w http.ResponseWriter, err error) {
 	detail := &errorDetail{Code: "internal_error", Message: "服务内部错误"}
 	var domainError *domain.Error
 	var maxBytesError *http.MaxBytesError
+	var decodeErr *jsonDecodeError
 	switch {
 	case errors.As(err, &domainError):
 		detail = &errorDetail{Code: string(domainError.Code), Message: domainError.Message, Field: domainError.Field}
@@ -49,24 +50,29 @@ func writeError(w http.ResponseWriter, err error) {
 		status, detail = http.StatusRequestEntityTooLarge, &errorDetail{Code: "body_too_large", Message: "请求体超过 1 MiB 限制"}
 	case errors.Is(err, context.DeadlineExceeded):
 		status, detail = http.StatusGatewayTimeout, &errorDetail{Code: "request_timeout", Message: "请求处理超时"}
-	case err != nil:
-		status, detail = http.StatusBadRequest, &errorDetail{Code: "invalid_json", Message: err.Error()}
+	case errors.As(err, &decodeErr):
+		status, detail = http.StatusBadRequest, &errorDetail{Code: "invalid_json", Message: decodeErr.Error()}
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(responseEnvelope{Error: detail})
 }
 
+type jsonDecodeError struct{ err error }
+
+func (e *jsonDecodeError) Error() string  { return e.err.Error() }
+func (e *jsonDecodeError) Unwrap() error { return e.err }
+
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return err
+		return &jsonDecodeError{err: err}
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		return errors.New("请求体只能包含一个 JSON 对象")
+		return &jsonDecodeError{err: errors.New("请求体只能包含一个 JSON 对象")}
 	}
 	return nil
 }
