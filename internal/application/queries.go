@@ -20,7 +20,7 @@ type SurveyDetail struct {
 }
 
 func (s *Service) SurveyDetail(ctx context.Context, surveyID string) (SurveyDetail, error) {
-	a, err := s.repository.Load(context.WithoutCancel(ctx), surveyID)
+	a, err := s.repository.Load(ctx, surveyID)
 	if err != nil {
 		return SurveyDetail{}, err
 	}
@@ -33,7 +33,7 @@ func (s *Service) SurveyDetail(ctx context.Context, surveyID string) (SurveyDeta
 }
 
 func (s *Service) PendingAdjudications(ctx context.Context, surveyID string) ([]policy.PendingItem, error) {
-	a, err := s.repository.Load(context.WithoutCancel(ctx), surveyID)
+	a, err := s.repository.Load(ctx, surveyID)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (s *Service) PendingAdjudications(ctx context.Context, surveyID string) ([]
 }
 
 func (s *Service) ReviewSummary(ctx context.Context, surveyID string) (policy.ReviewSummary, error) {
-	a, err := s.repository.Load(context.WithoutCancel(ctx), surveyID)
+	a, err := s.repository.Load(ctx, surveyID)
 	if err != nil {
 		return policy.ReviewSummary{}, err
 	}
@@ -54,7 +54,7 @@ type VerificationResult struct {
 }
 
 func (s *Service) VerifyRelease(ctx context.Context, code string) (VerificationResult, error) {
-	release, err := s.repository.FindRelease(context.WithoutCancel(ctx), code)
+	release, err := s.repository.FindRelease(ctx, code)
 	if err != nil {
 		if e, ok := err.(*domain.Error); ok && e.Code == domain.CodeNotFound {
 			return VerificationResult{Valid: false}, nil
@@ -93,7 +93,7 @@ func (s *Service) VerificationResults(ctx context.Context, query VerificationQue
 	if query.QualityFlag != "" && !policy.IsQualityFlag(query.QualityFlag) {
 		return VerificationQueryResult{}, domain.Invalid("qualityFlag", "不是有效质量标记")
 	}
-	a, err := s.repository.Load(context.WithoutCancel(ctx), query.SurveyID)
+	a, err := s.repository.Load(ctx, query.SurveyID)
 	if err != nil {
 		return VerificationQueryResult{}, err
 	}
@@ -160,7 +160,7 @@ func (s *Service) ReleaseContents(ctx context.Context, query ReleaseContentQuery
 	if err := validatePagination(query.Page, query.PageSize); err != nil {
 		return ReleaseContentResult{}, err
 	}
-	release, err := s.repository.FindRelease(context.WithoutCancel(ctx), query.VerificationCode)
+	release, err := s.repository.FindRelease(ctx, query.VerificationCode)
 	if err != nil {
 		return ReleaseContentResult{}, err
 	}
