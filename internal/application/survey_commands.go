@@ -20,7 +20,7 @@ func (s *Service) CreateSurvey(ctx context.Context, command CreateSurveyCommand)
 	if err := requireIdempotency(command.IdempotencyKey); err != nil {
 		return MutationResult{}, err
 	}
-	if data, ok, err := s.repository.LookupIdempotency(context.WithoutCancel(ctx), "create", command.IdempotencyKey); err != nil {
+	if data, ok, err := s.repository.LookupIdempotency(ctx, "create", command.IdempotencyKey); err != nil {
 		return MutationResult{}, err
 	} else if ok {
 		result, err := decodeResult[MutationResult](data)
@@ -38,7 +38,7 @@ func (s *Service) CreateSurvey(ctx context.Context, command CreateSurveyCommand)
 	if err != nil {
 		return MutationResult{}, err
 	}
-	stored, replayed, err := s.repository.Create(context.WithoutCancel(ctx), aggregate, command.IdempotencyKey, encoded)
+	stored, replayed, err := s.repository.Create(ctx, aggregate, command.IdempotencyKey, encoded)
 	if err != nil {
 		return MutationResult{}, err
 	}
@@ -89,7 +89,7 @@ func (s *Service) AddStation(ctx context.Context, command AddStationCommand) (Mu
 	if err != nil {
 		return MutationResult{}, err
 	}
-	data, replay, err := s.repository.Transact(context.WithoutCancel(ctx), command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
+	data, replay, err := s.repository.Transact(ctx, command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
 		actor := strings.TrimSpace(command.Actor)
 		if actor == "" {
 			actor = a.Survey.LeadResearcher
@@ -127,7 +127,7 @@ func (s *Service) UpdateStation(ctx context.Context, command UpdateStationComman
 	if err != nil {
 		return MutationResult{}, err
 	}
-	data, replay, err := s.repository.Transact(context.WithoutCancel(ctx), command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
+	data, replay, err := s.repository.Transact(ctx, command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
 		actor := strings.TrimSpace(command.Actor)
 		if actor == "" {
 			actor = a.Survey.LeadResearcher
@@ -184,7 +184,7 @@ func (s *Service) simpleMutation(ctx context.Context, surveyID string, expected 
 	if err := requireIdempotency(key); err != nil {
 		return MutationResult{}, err
 	}
-	data, replay, err := s.repository.Transact(context.WithoutCancel(ctx), surveyID, expected, key, func(a *domain.Aggregate) (json.RawMessage, error) {
+	data, replay, err := s.repository.Transact(ctx, surveyID, expected, key, func(a *domain.Aggregate) (json.RawMessage, error) {
 		if err := mutate(a); err != nil {
 			return nil, err
 		}

@@ -61,7 +61,7 @@ func (s *Service) Publish(ctx context.Context, command PublishCommand) (PublishR
 	if err := requireIdempotency(command.IdempotencyKey); err != nil {
 		return PublishResult{}, err
 	}
-	data, replay, err := s.repository.Transact(context.WithoutCancel(ctx), command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
+	data, replay, err := s.repository.Transact(ctx, command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
 		if err := s.release.EnsureEligible(a); err != nil {
 			return nil, err
 		}
