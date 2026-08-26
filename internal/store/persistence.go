@@ -31,16 +31,11 @@ func verifyChecksum(event eventRecord) error {
 	return nil
 }
 
-func appendEvent(path string, event eventRecord) error {
+func appendEvent(file *os.File, event eventRecord) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("编码事件: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("打开事件日志: %w", err)
-	}
-	defer file.Close()
 	if _, err := file.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("追加事件: %w", err)
 	}

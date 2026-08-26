@@ -18,6 +18,7 @@ type FileRepository struct {
 	surveyLocks  map[string]*sync.Mutex
 	state        snapshot
 	eventsPath   string
+	eventsFile   *os.File
 	snapshotPath string
 }
 
@@ -40,6 +41,11 @@ func Open(dataDirectory string) (*FileRepository, error) {
 			return nil, err
 		}
 	}
+	eventsFile, err := os.OpenFile(eventsPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("打开事件日志: %w", err)
+	}
+	repository.eventsFile = eventsFile
 	return repository, nil
 }
 
@@ -127,7 +133,7 @@ func (r *FileRepository) commitLocked(kind string, aggregate *domain.Aggregate, 
 		return err
 	}
 	event.Checksum = checksum
-	if err := appendEvent(r.eventsPath, event); err != nil {
+	if err := appendEvent(r.eventsFile, event); err != nil {
 		return err
 	}
 	r.state.LastSequence = event.Sequence
