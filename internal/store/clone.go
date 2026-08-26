@@ -8,20 +8,21 @@ import (
 )
 
 func cloneAggregate(source *domain.Aggregate) (*domain.Aggregate, error) {
-	data, err := json.Marshal(source)
-	if err != nil {
-		return nil, fmt.Errorf("复制调查聚合: %w", err)
+	if source == nil {
+		return nil, fmt.Errorf("复制调查聚合: 源聚合为空")
 	}
-	var target domain.Aggregate
-	if err := json.Unmarshal(data, &target); err != nil {
-		return nil, fmt.Errorf("恢复调查聚合副本: %w", err)
+	target := *source
+	target.Stations = make(map[string]domain.CameraStation, len(source.Stations))
+	for id, station := range source.Stations {
+		target.Stations[id] = station
 	}
-	if target.Stations == nil {
-		target.Stations = map[string]domain.CameraStation{}
+	target.Observations = make(map[string]domain.Observation, len(source.Observations))
+	for id, observation := range source.Observations {
+		target.Observations[id] = observation
 	}
-	if target.Observations == nil {
-		target.Observations = map[string]domain.Observation{}
-	}
+	target.Adjudications = append([]domain.Adjudication(nil), source.Adjudications...)
+	target.Releases = append([]domain.DatasetRelease(nil), source.Releases...)
+	target.AuditTrail = append([]domain.AuditEntry(nil), source.AuditTrail...)
 	return &target, nil
 }
 
