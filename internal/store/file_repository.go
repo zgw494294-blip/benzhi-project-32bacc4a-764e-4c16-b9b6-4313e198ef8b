@@ -121,6 +121,10 @@ func (r *FileRepository) Transact(ctx context.Context, surveyID string, expected
 }
 
 func (r *FileRepository) commitLocked(kind string, aggregate *domain.Aggregate, ref string, result json.RawMessage) error {
+	eventOffset, err := eventLogSize(r.eventsPath)
+	if err != nil {
+		return err
+	}
 	event := eventRecord{SchemaVersion: schemaVersion, Sequence: r.state.LastSequence + 1, Kind: kind, SurveyID: aggregate.Survey.ID, SurveyVersion: aggregate.Survey.ExpectedVersion, IdempotencyRef: ref, Result: cloneRaw(result), Aggregate: aggregate, RecordedAt: time.Now().UTC()}
 	checksum, err := calculateChecksum(event)
 	if err != nil {
@@ -130,13 +134,22 @@ func (r *FileRepository) commitLocked(kind string, aggregate *domain.Aggregate, 
 	if err := appendEvent(r.eventsPath, event); err != nil {
 		return err
 	}
+	previous := r.state
 	r.state.LastSequence = event.Sequence
 	r.state.Surveys[aggregate.Survey.ID] = aggregate
 	r.state.Idempotency[ref] = cloneRaw(result)
 	for _, release := range aggregate.Releases {
 		r.state.Releases[release.VerificationCode] = release
 	}
-	return writeSnapshot(r.snapshotPath, r.state)
+	if err := writeSnapshot(r.snapshotPath, r.state); err != nil {
+		rollbackErr := truncateEventLog(r.eventsPath, eventOffset)
+		r.state = previous
+		if rollbackErr != nil {
+			return fmt.Errorf("%v；回滚事件日志: %w", err, rollbackErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *FileRepository) Load(ctx context.Context, surveyID string) (*domain.Aggregate, error) {

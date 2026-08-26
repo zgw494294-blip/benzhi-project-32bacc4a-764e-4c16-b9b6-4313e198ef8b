@@ -50,6 +50,32 @@ func appendEvent(path string, event eventRecord) error {
 	return nil
 }
 
+func eventLogSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("读取事件日志位置: %w", err)
+	}
+	return info.Size(), nil
+}
+
+func truncateEventLog(path string, size int64) error {
+	file, err := os.OpenFile(path, os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("打开事件日志回滚: %w", err)
+	}
+	defer file.Close()
+	if err := file.Truncate(size); err != nil {
+		return fmt.Errorf("截断事件日志回滚: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("同步事件日志回滚: %w", err)
+	}
+	return nil
+}
+
 func writeSnapshot(path string, value snapshot) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
