@@ -14,7 +14,7 @@ import (
 )
 
 type FileRepository struct {
-	mu           sync.RWMutex
+	locksMu      sync.Mutex
 	surveyLocks  map[string]*sync.Mutex
 	state        snapshot
 	eventsPath   string
@@ -44,8 +44,8 @@ func Open(dataDirectory string) (*FileRepository, error) {
 }
 
 func (r *FileRepository) lockFor(surveyID string) *sync.Mutex {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.locksMu.Lock()
+	defer r.locksMu.Unlock()
 	lock, ok := r.surveyLocks[surveyID]
 	if !ok {
 		lock = &sync.Mutex{}
@@ -61,8 +61,6 @@ func (r *FileRepository) Create(ctx context.Context, aggregate *domain.Aggregate
 	lock := r.lockFor(aggregate.Survey.ID)
 	lock.Lock()
 	defer lock.Unlock()
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	ref := idempotencyRef("create", key)
 	if previous, ok := r.state.Idempotency[ref]; ok {
 		return cloneRaw(previous), true, nil
@@ -87,8 +85,6 @@ func (r *FileRepository) Transact(ctx context.Context, surveyID string, expected
 	lock := r.lockFor(surveyID)
 	lock.Lock()
 	defer lock.Unlock()
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	ref := idempotencyRef(surveyID, key)
 	if previous, ok := r.state.Idempotency[ref]; ok {
 		return cloneRaw(previous), true, nil
@@ -143,8 +139,6 @@ func (r *FileRepository) Load(ctx context.Context, surveyID string) (*domain.Agg
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	aggregate, ok := r.state.Surveys[surveyID]
 	if !ok {
 		return nil, domain.NewError(domain.CodeNotFound, "调查任务不存在", "surveyId")
@@ -156,8 +150,6 @@ func (r *FileRepository) LookupIdempotency(ctx context.Context, scope, key strin
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	result, ok := r.state.Idempotency[idempotencyRef(scope, key)]
 	return cloneRaw(result), ok, nil
 }
@@ -166,8 +158,6 @@ func (r *FileRepository) FindRelease(ctx context.Context, code string) (*domain.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	release, ok := r.state.Releases[code]
 	if !ok {
 		return nil, domain.NewError(domain.CodeNotFound, "发布凭据不存在", "verificationCode")
