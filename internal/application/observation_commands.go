@@ -73,7 +73,7 @@ func (s *Service) SubmitObservationBatch(ctx context.Context, command SubmitObse
 		}
 		observations[index] = observation
 	}
-	data, replay, err := s.repository.Transact(ctx, command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
+	data, replay, err := s.repository.Transact(context.WithoutCancel(ctx), command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
 		for index, observation := range observations {
 			if err := s.quality.ValidateSubmission(a.Survey, observation, fmt.Sprintf("items[%d]", index)); err != nil {
 				return nil, err
@@ -108,7 +108,7 @@ func (s *Service) SubmitObservation(ctx context.Context, command SubmitObservati
 	if err != nil {
 		return MutationResult{}, err
 	}
-	data, replay, err := s.repository.Transact(ctx, command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
+	data, replay, err := s.repository.Transact(context.WithoutCancel(ctx), command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
 		actor := strings.TrimSpace(command.Actor)
 		if actor == "" {
 			actor = a.Survey.LeadResearcher
@@ -212,7 +212,7 @@ func (s *Service) Adjudicate(ctx context.Context, command AdjudicateCommand) (Mu
 	if err != nil {
 		return MutationResult{}, err
 	}
-	data, replay, err := s.repository.Transact(ctx, command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
+	data, replay, err := s.repository.Transact(context.WithoutCancel(ctx), command.SurveyID, command.ExpectedVersion, command.IdempotencyKey, func(a *domain.Aggregate) (json.RawMessage, error) {
 		if command.Adjudicator == a.Survey.LeadResearcher {
 			return nil, domain.Invalid("adjudicator", "必须独立于调查负责人")
 		}
