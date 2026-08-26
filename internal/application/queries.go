@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -22,7 +23,7 @@ type SurveyDetail struct {
 func (s *Service) SurveyDetail(ctx context.Context, surveyID string) (SurveyDetail, error) {
 	a, err := s.repository.Load(ctx, surveyID)
 	if err != nil {
-		return SurveyDetail{}, err
+		return SurveyDetail{}, fmt.Errorf("查询调查详情: %v", err)
 	}
 	detail := SurveyDetail{Survey: a.Survey, Stations: make([]domain.CameraStation, 0, len(a.Stations)), Observations: a.SortedObservations(), Adjudications: append([]domain.Adjudication(nil), a.Adjudications...), Releases: append([]domain.DatasetRelease(nil), a.Releases...), AuditTrail: append([]domain.AuditEntry(nil), a.AuditTrail...)}
 	for _, station := range a.Stations {
@@ -35,7 +36,7 @@ func (s *Service) SurveyDetail(ctx context.Context, surveyID string) (SurveyDeta
 func (s *Service) PendingAdjudications(ctx context.Context, surveyID string) ([]policy.PendingItem, error) {
 	a, err := s.repository.Load(ctx, surveyID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("查询待裁定队列: %v", err)
 	}
 	return policy.PendingQueue(a), nil
 }
@@ -43,7 +44,7 @@ func (s *Service) PendingAdjudications(ctx context.Context, surveyID string) ([]
 func (s *Service) ReviewSummary(ctx context.Context, surveyID string) (policy.ReviewSummary, error) {
 	a, err := s.repository.Load(ctx, surveyID)
 	if err != nil {
-		return policy.ReviewSummary{}, err
+		return policy.ReviewSummary{}, fmt.Errorf("查询复核摘要: %v", err)
 	}
 	return s.release.Summarize(a), nil
 }
@@ -56,6 +57,7 @@ type VerificationResult struct {
 func (s *Service) VerifyRelease(ctx context.Context, code string) (VerificationResult, error) {
 	release, err := s.repository.FindRelease(ctx, code)
 	if err != nil {
+		err = fmt.Errorf("核验发布凭据: %v", err)
 		if e, ok := err.(*domain.Error); ok && e.Code == domain.CodeNotFound {
 			return VerificationResult{Valid: false}, nil
 		}
@@ -95,7 +97,7 @@ func (s *Service) VerificationResults(ctx context.Context, query VerificationQue
 	}
 	a, err := s.repository.Load(ctx, query.SurveyID)
 	if err != nil {
-		return VerificationQueryResult{}, err
+		return VerificationQueryResult{}, fmt.Errorf("查询核验结果: %v", err)
 	}
 	filtered := make([]domain.Observation, 0)
 	counts := map[string]int{
@@ -162,7 +164,7 @@ func (s *Service) ReleaseContents(ctx context.Context, query ReleaseContentQuery
 	}
 	release, err := s.repository.FindRelease(ctx, query.VerificationCode)
 	if err != nil {
-		return ReleaseContentResult{}, err
+		return ReleaseContentResult{}, fmt.Errorf("查询发布内容: %v", err)
 	}
 	species := strings.TrimSpace(query.Species)
 	items := make([]domain.ReleaseManifestItem, 0, len(release.Manifest.Items))
