@@ -20,13 +20,6 @@ func (s *Service) CreateSurvey(ctx context.Context, command CreateSurveyCommand)
 	if err := requireIdempotency(command.IdempotencyKey); err != nil {
 		return MutationResult{}, err
 	}
-	if data, ok, err := s.repository.LookupIdempotency(ctx, "create", command.IdempotencyKey); err != nil {
-		return MutationResult{}, err
-	} else if ok {
-		result, err := decodeResult[MutationResult](data)
-		result.Replayed = true
-		return result, err
-	}
 	now := s.clock.Now()
 	survey, err := domain.NewSurvey(newID("sur"), command.Title, command.LeadResearcher, command.SpeciesCatalog, now)
 	if err != nil {
@@ -37,6 +30,13 @@ func (s *Service) CreateSurvey(ctx context.Context, command CreateSurveyCommand)
 	encoded, err := encodeResult(result)
 	if err != nil {
 		return MutationResult{}, err
+	}
+	if data, ok, err := s.repository.LookupIdempotency(ctx, "create", command.IdempotencyKey); err != nil {
+		return MutationResult{}, err
+	} else if ok {
+		result, err := decodeResult[MutationResult](data)
+		result.Replayed = true
+		return result, err
 	}
 	stored, replayed, err := s.repository.Create(ctx, aggregate, command.IdempotencyKey, encoded)
 	if err != nil {
