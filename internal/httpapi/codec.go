@@ -49,6 +49,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status, detail = http.StatusRequestEntityTooLarge, &errorDetail{Code: "body_too_large", Message: "请求体超过 1 MiB 限制"}
 	case errors.Is(err, context.DeadlineExceeded):
 		status, detail = http.StatusGatewayTimeout, &errorDetail{Code: "request_timeout", Message: "请求处理超时"}
+	case errors.Is(err, context.Canceled):
+		status, detail = 499, &errorDetail{Code: "request_canceled", Message: "客户端已取消请求"}
 	case err != nil:
 		status, detail = http.StatusBadRequest, &errorDetail{Code: "invalid_json", Message: err.Error()}
 	}

@@ -74,6 +74,9 @@ func (r *FileRepository) Create(ctx context.Context, aggregate *domain.Aggregate
 	if err != nil {
 		return nil, false, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
 	if err := r.commitLocked("survey_created", copy, ref, result); err != nil {
 		return nil, false, err
 	}
@@ -113,6 +116,9 @@ func (r *FileRepository) Transact(ctx context.Context, surveyID string, expected
 	}
 	if working.Survey.ExpectedVersion <= current.Survey.ExpectedVersion {
 		return nil, false, fmt.Errorf("事务未推进调查版本")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
 	}
 	if err := r.commitLocked("survey_updated", working, ref, result); err != nil {
 		return nil, false, err
