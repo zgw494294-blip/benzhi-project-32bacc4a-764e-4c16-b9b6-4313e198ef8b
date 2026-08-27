@@ -127,14 +127,14 @@ func (r *FileRepository) commitLocked(kind string, aggregate *domain.Aggregate, 
 		return err
 	}
 	event.Checksum = checksum
+	if err := appendEvent(r.eventsPath, event); err != nil {
+		return err
+	}
 	r.state.LastSequence = event.Sequence
 	r.state.Surveys[aggregate.Survey.ID] = aggregate
 	r.state.Idempotency[ref] = cloneRaw(result)
 	for _, release := range aggregate.Releases {
 		r.state.Releases[release.VerificationCode] = release
-	}
-	if err := appendEvent(r.eventsPath, event); err != nil {
-		return err
 	}
 	return writeSnapshot(r.snapshotPath, r.state)
 }
