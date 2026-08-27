@@ -3,26 +3,50 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"trapreview/internal/domain"
 )
 
 func cloneAggregate(source *domain.Aggregate) (*domain.Aggregate, error) {
-	data, err := json.Marshal(source)
-	if err != nil {
-		return nil, fmt.Errorf("复制调查聚合: %w", err)
+	if source == nil {
+		return nil, fmt.Errorf("复制调查聚合: 源聚合为空")
 	}
-	var target domain.Aggregate
-	if err := json.Unmarshal(data, &target); err != nil {
-		return nil, fmt.Errorf("恢复调查聚合副本: %w", err)
+	target := *source
+	target.Survey.SpeciesCatalog = append([]string(nil), source.Survey.SpeciesCatalog...)
+	target.Stations = make(map[string]domain.CameraStation, len(source.Stations))
+	for id, station := range source.Stations {
+		station.RetrievedAt = cloneTimePointer(station.RetrievedAt)
+		target.Stations[id] = station
 	}
-	if target.Stations == nil {
-		target.Stations = map[string]domain.CameraStation{}
+	target.Observations = make(map[string]domain.Observation, len(source.Observations))
+	for id, observation := range source.Observations {
+		observation.QualityFlags = append([]string(nil), observation.QualityFlags...)
+		observation.LastVerifiedAt = cloneTimePointer(observation.LastVerifiedAt)
+		target.Observations[id] = observation
 	}
-	if target.Observations == nil {
-		target.Observations = map[string]domain.Observation{}
+	target.Adjudications = append([]domain.Adjudication(nil), source.Adjudications...)
+	target.Releases = make([]domain.DatasetRelease, len(source.Releases))
+	for index, release := range source.Releases {
+		clonedCounts := make(map[string]int, len(release.SpeciesCounts))
+		for species, count := range release.SpeciesCounts {
+			clonedCounts[species] = count
+		}
+		release.SpeciesCounts = clonedCounts
+		release.Manifest.Items = append([]domain.ReleaseManifestItem(nil), release.Manifest.Items...)
+		target.Releases[index] = release
 	}
+	target.AuditTrail = append([]domain.AuditEntry(nil), source.AuditTrail...)
+	target.ApprovedAt = cloneTimePointer(source.ApprovedAt)
 	return &target, nil
+}
+
+func cloneTimePointer(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copy := value.UTC()
+	return &copy
 }
 
 func cloneRaw(source json.RawMessage) json.RawMessage { return append(json.RawMessage(nil), source...) }
